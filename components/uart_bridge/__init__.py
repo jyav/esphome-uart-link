@@ -22,13 +22,25 @@ DIRECTIONS = {
     "b_to_a": Direction.DIRECTION_B_TO_A,
 }
 
-CONFIG_SCHEMA = cv.Schema({
-    cv.GenerateID(): cv.declare_id(UARTBridge),
-    cv.Required(CONF_UART_A): cv.use_id(uart.UARTComponent),
-    cv.Required(CONF_UART_B): cv.use_id(uart.UARTComponent),
-    cv.Optional(CONF_BUFFER_SIZE, default=512): cv.All(cv.validate_bytes, cv.Range(min=64, max=8192)),
-    cv.Optional(CONF_DIRECTION, default="bidirectional"): cv.enum(DIRECTIONS, lower=True),
-}).extend(cv.COMPONENT_SCHEMA)
+def _validate_no_self_loop(config):
+    if config[CONF_UART_A] == config[CONF_UART_B]:
+        raise cv.Invalid(
+            f"Self-loop detected: uart_a and uart_b must reference different "
+            f"UART components. Bridging a UART to itself creates an infinite loop."
+        )
+    return config
+
+
+CONFIG_SCHEMA = cv.All(
+    cv.Schema({
+        cv.GenerateID(): cv.declare_id(UARTBridge),
+        cv.Required(CONF_UART_A): cv.use_id(uart.UARTComponent),
+        cv.Required(CONF_UART_B): cv.use_id(uart.UARTComponent),
+        cv.Optional(CONF_BUFFER_SIZE, default=512): cv.All(cv.validate_bytes, cv.Range(min=64, max=8192)),
+        cv.Optional(CONF_DIRECTION, default="bidirectional"): cv.enum(DIRECTIONS, lower=True),
+    }).extend(cv.COMPONENT_SCHEMA),
+    _validate_no_self_loop,
+)
 
 
 async def to_code(config):

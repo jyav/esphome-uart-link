@@ -49,7 +49,8 @@ class UARTTCPClientComponent : public uart::UARTComponent, public Component {
   bool has_peek_{false};
 
   // State
-  bool connected_{false};
+  volatile bool connected_{false};
+  volatile bool connecting_{false};
   uint32_t last_connect_attempt_{0};
 
   // Stall detection

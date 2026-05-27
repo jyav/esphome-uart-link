@@ -10,6 +10,7 @@ void UARTTCPClientComponent::setup() {
       [](void *arg, AsyncClient *client) {
         auto *self = static_cast<UARTTCPClientComponent *>(arg);
         self->connected_ = true;
+        self->connecting_ = false;
         self->last_rx_byte_time_ = millis();
         ESP_LOGI(TAG, "Connected to %s:%u", self->host_.c_str(), self->port_);
       },
@@ -19,6 +20,7 @@ void UARTTCPClientComponent::setup() {
       [](void *arg, AsyncClient *client) {
         auto *self = static_cast<UARTTCPClientComponent *>(arg);
         self->connected_ = false;
+        self->connecting_ = false;
         ESP_LOGW(TAG, "Disconnected from %s:%u", self->host_.c_str(), self->port_);
       },
       this);
@@ -36,6 +38,7 @@ void UARTTCPClientComponent::setup() {
         auto *self = static_cast<UARTTCPClientComponent *>(arg);
         ESP_LOGE(TAG, "TCP error: %d", error);
         self->connected_ = false;
+        self->connecting_ = false;
       },
       this);
 
@@ -43,7 +46,16 @@ void UARTTCPClientComponent::setup() {
 }
 
 void UARTTCPClientComponent::connect_() {
+  // Abort any in-progress attempt before starting a new one.
+  // Without this, a stale DNS callback on the async task can race with
+  // a new connect() call from the main loop, corrupting lwIP's
+  // tcp_core_guard mutex (assertion failure in sys_mutex_unlock).
+  if (connecting_) {
+    tcp_client_.close();
+    connecting_ = false;
+  }
   ESP_LOGI(TAG, "Connecting to %s:%u ...", host_.c_str(), port_);
+  connecting_ = true;
   tcp_client_.connect(host_.c_str(), port_);
   last_connect_attempt_ = millis();
 }
@@ -51,6 +63,7 @@ void UARTTCPClientComponent::connect_() {
 void UARTTCPClientComponent::disconnect_() {
   tcp_client_.close();
   connected_ = false;
+  connecting_ = false;
 }
 
 void UARTTCPClientComponent::loop() {
@@ -70,8 +83,8 @@ void UARTTCPClientComponent::loop() {
     }
   }
 
-  // Auto-reconnect
-  if (!connected_ && (millis() - last_connect_attempt_ > reconnect_interval_ms_)) {
+  // Auto-reconnect (only if not already connecting)
+  if (!connected_ && !connecting_ && (millis() - last_connect_attempt_ > reconnect_interval_ms_)) {
     connect_();
   }
 }
