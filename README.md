@@ -1,7 +1,7 @@
 # esphome-uart-link
 
 ESPHome external components for UART interconnection. Bridges hardware serial ports to TCP networks and each other.
-Transport-agnostic: any UART consumer sees the standard `available()` / `read_array()` / `write_array()` interface regardless of whether bytes come from GPIO pins, a TCP socket, or another UART.
+Transport-agnostic: any UART consumer sees the standard `available()` / `read_array()` / `write_array()` interface no matter whether bytes come from GPIO pins, a TCP socket, or another UART.
 
 ## Components
 
@@ -75,7 +75,7 @@ uart_tcp_server:
 
 ### `uart_bridge`
 
-N-way byte forwarder between UART references. Works with any combination of hardware UART, TCP client, TCP server, USB CDC ACM, or other bridges. The bridge itself is a `UARTComponent` — consumers can optionally use it as a `uart_id` for multi-tap topologies.
+N-way byte forwarder between UART references. Works with any combination of hardware UART, TCP client, TCP server, USB CDC ACM, or other bridges. The bridge itself is a `UARTComponent`. Consumers can use it as a `uart_id` for multi-tap topologies.
 
 ```yaml
 uart_bridge:
@@ -91,16 +91,16 @@ uart_bridge:
   uarts:
     - hw_uart                # flow: both (default)
     - uart: debug_tap
-      flow: from_bridge      # read-only tap — sees traffic, can't inject
+      flow: from_bridge      # read-only tap: sees traffic, can't inject
 ```
 
 **Flow options:**
 
 | flow | Bridge reads from it | Bridge writes to it | Use for |
 |---|---|---|---|
-| `both` (default) | yes | yes | Full participant — hardware UART, bidirectional link |
-| `from_bridge` | no | yes | Read-only tap — debug viewer, passive monitor |
-| `to_bridge` | yes | no | Inject-only source — feeds data in without receiving |
+| `both` (default) | yes | yes | Full participant (hardware UART, bidirectional link) |
+| `from_bridge` | no | yes | Read-only tap (debug viewer, passive monitor) |
+| `to_bridge` | yes | no | Inject-only source (feeds data in, receives nothing) |
 
 `id` is optional. Only needed when a UART consumer needs to read or write through the bridge itself.
 
@@ -112,7 +112,7 @@ uart_bridge:
 | hardware UART + tcp_server | Serial-to-network bridge |
 | tcp_client + hardware UART | Remote serial port consumer |
 | tcp_client + tcp_server | Network serial proxy/repeater |
-| hardware UART + tcp_server (`from_bridge`) + consumer via bridge `id` | Multi-tap — consumer + debug viewer |
+| hardware UART + tcp_server (`from_bridge`) + consumer via bridge `id` | Multi-tap (consumer + debug viewer) |
 
 ## Common Examples
 
@@ -135,7 +135,7 @@ flowchart LR
     end
 ```
 
-**ESP A** — connected to the serial device, listening on TCP:
+**ESP A**: connected to the serial device, listening on TCP:
 
 ```yaml
 external_components:
@@ -158,7 +158,7 @@ uart_bridge:
   uarts: [device_uart, tcp_link]
 ```
 
-**ESP B** — connects to ESP A, presents the remote UART to any consumer:
+**ESP B**: connects to ESP A, presents the remote UART to any consumer:
 
 ```yaml
 external_components:
@@ -171,7 +171,7 @@ uart_tcp_client:
   host: esp-a.local
   port: 5000
 
-# Use remote_uart like any local UART — modbus, meters, sensors, etc.
+# Use remote_uart like any local UART: modbus, meters, sensors, etc.
 modbus_controller:
   uart_id: remote_uart
 ```
@@ -277,7 +277,7 @@ flowchart BT
     S -.->|"bytes back"| R
 ```
 
-`uart_tcp_server` can be used directly as a `uart_id` — no hardware UART or `uart_bridge` needed.
+`uart_tcp_server` can be used directly as a `uart_id`. No hardware UART or `uart_bridge` needed.
 The TCP clients *are* the serial device.
 Any automation that writes to a UART can write to it.
 If no clients are connected, writes are silently dropped.
@@ -305,7 +305,7 @@ This pattern scales to any UART consumer component that accepts a `uart_id`.
 See [InfinitESP](https://github.com/nebulous/infinitesp) for a production example:
 a custom `sam_ascii` component uses `uart_tcp_server` directly as its UART to expose an HVAC CLI over the network.
 
-### Multi-tap — debug viewer alongside a UART consumer
+### Multi-tap: debug viewer alongside a UART consumer
 
 ESPHome's UART is poll-based. Once bytes are read, they're gone.
 You can't have two components reading from the same hardware UART.
@@ -340,16 +340,24 @@ uart_tcp_server:
   client_mode: fanout
   max_clients: 4
 
+uart_tcp_server:
+  id: second_tap
+  port: 5001
+  client_mode: fanout
+  max_clients: 2
+
 uart_bridge:
   id: hub_uart
   uarts:
     - uart_bus
     - uart: radar_tap
-      flow: from_bridge      # nc sees traffic, can't inject bytes into the radar
+      flow: from_bridge
+    - uart: second_tap
+      flow: from_bridge
 
 ld2450:
   id: ld2450_radar
-  uart_id: hub_uart           # reads from the bridge
+  uart_id: hub_uart
   throttle: 100ms
 ```
 
@@ -359,7 +367,7 @@ while the ld2450 component works normally.
 **How it works:**
 The bridge reads from `uart_bus` and fans bytes out to both its internal ring buffer
 (for the `ld2450` consumer) and to `radar_tap` (for nc).
-The `flow: from_bridge` setting means `radar_tap` only receives — nc can't inject
+The `flow: from_bridge` setting means `radar_tap` only receives. nc can't inject
 bytes back into the bridge and through to the radar.
 
 **Without `flow: from_bridge`:**
@@ -385,16 +393,14 @@ Using `from_bridge` prevents this.
 - **Multiple independent bridges:**
   ```yaml
   uart_bridge:
-    uarts: [rs485_bus, tcp_server_1]
-
-  uart_bridge:
-    id: debug_hub
-    uarts:
-      - rs232_bus
-      - uart: tcp_server_2
-        flow: from_bridge
+    - uarts: [rs485_bus, tcp_server_1]
+    - id: debug_hub
+      uarts:
+        - rs232_bus
+        - uart: tcp_server_2
+          flow: from_bridge
   ```
-  Each bridge is independent. Multiple bridges on one ESP is supported.
+  Each bridge is independent. Multiple bridges use standard ESPHome list syntax.
 
 ## Design Notes
 
@@ -405,7 +411,7 @@ a TCP thread (ESP32) or the main loop (ESP8266).
 The SPSC ring buffer in `uart_common` handles the producer/consumer split:
 TCP callback writes, main loop reads. No mutex needed.
 
-`uart_bridge` operates entirely in `loop()` — single-threaded, no concurrency concerns.
+`uart_bridge` operates entirely in `loop()`, single-threaded, no concurrency concerns.
 
 ### Backpressure
 
@@ -415,7 +421,7 @@ If a destination can't keep up, bytes buffer in its transport layer
 The bridge assumes both sides can keep up.
 For very high baud rates, increase `buffer_size`.
 
-### Raw byte stream — no flow control or RFC 2217
+### Raw byte stream: no flow control or RFC 2217
 
 The TCP transport carries raw bytes only.
 It does not implement RFC 2217 (telnet COM port control),
@@ -455,9 +461,18 @@ uart_bridge:
   uart_b: rs232_bus
   direction: bidirectional
 
-# Current syntax — equivalent
+# Current syntax (equivalent)
 uart_bridge:
   uarts: [rs485_bus, rs232_bus]
+```
+
+Multiple bridges use list syntax:
+```yaml
+uart_bridge:
+  - uarts:
+      - rs485_bus
+      - tcp_server_a
+  - uarts: [rs232_bus, tcp_server_b]
 ```
 
 ### License: MIT
