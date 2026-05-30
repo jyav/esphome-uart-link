@@ -44,7 +44,8 @@ void UARTBridge::setup() {
   // Initialize rx ring (use buffer_size as capacity hint)
   rx_ring_.init(buffer_.empty() ? 512 : buffer_.size());
 
-  ESP_LOGCONFIG(TAG, "UART Bridge:");
+  const char *id = name_.empty() ? "(no id)" : name_.c_str();
+  ESP_LOGCONFIG(TAG, "UART Bridge '%s':", id);
   for (size_t i = 0; i < members_.size(); i++) {
     const char *flow_str =
         members_[i].flow == FLOW_BOTH ? "both" :
@@ -86,7 +87,8 @@ void UARTBridge::loop() {
 
 void UARTBridge::dump_config() {
   if (total_bytes_forwarded_ > 0) {
-    ESP_LOGD(TAG, "Bridge stats: %u bytes forwarded", (unsigned) total_bytes_forwarded_);
+    const char *id = name_.empty() ? "(no id)" : name_.c_str();
+    ESP_LOGD(TAG, "Bridge '%s': %u bytes forwarded", id, (unsigned) total_bytes_forwarded_);
   }
 }
 
@@ -103,7 +105,8 @@ void UARTBridge::write_array(const uint8_t *data, size_t len) {
     }
   }
   if (sent_count == 0 && len > 0) {
-    ESP_LOGD(TAG, "write_array: no writer members, dropping %u bytes", (unsigned) len);
+    const char *id = name_.empty() ? "(no id)" : name_.c_str();
+    ESP_LOGD(TAG, "'%s' write_array: no writer members, dropping %u bytes", id, (unsigned) len);
   }
 }
 

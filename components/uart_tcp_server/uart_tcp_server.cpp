@@ -19,6 +19,7 @@ std::string UARTTCPServerComponent::remote_addr_(AsyncClient *client) {
 void UARTTCPServerComponent::setup() {
   merged_ring_.init(rx_buffer_size_);
 
+  const char *id = name_.empty() ? "(no id)" : name_.c_str();
   tcp_server_ = new AsyncServer(port_);
   tcp_server_->onClient(
       [](void *arg, AsyncClient *client) {
@@ -27,7 +28,7 @@ void UARTTCPServerComponent::setup() {
       this);
   tcp_server_->begin();
 
-  ESP_LOGI(TAG, "Listening on port %u (max_clients=%u, mode=%s)", port_, (unsigned) max_clients_,
+  ESP_LOGI(TAG, "'%s' listening on port %u (max_clients=%u, mode=%s)", id, port_, (unsigned) max_clients_,
            client_mode_ == CLIENT_MODE_FANOUT ? "fanout" : "exclusive");
 }
 
@@ -36,7 +37,8 @@ ClientState *UARTTCPServerComponent::accept_client_(AsyncClient *client) {
   if (client_mode_ == CLIENT_MODE_EXCLUSIVE) {
     for (auto *cs : clients_) {
       if (cs->connected) {
-        ESP_LOGI(TAG, "Exclusive mode: disconnecting existing client %s", remote_addr_(cs->client).c_str());
+        ESP_LOGI(TAG, "'%s' exclusive mode: disconnecting existing client %s",
+                 name_.empty() ? "(no id)" : name_.c_str(), remote_addr_(cs->client).c_str());
         cs->client->close();
         cs->connected = false;
       }
@@ -55,8 +57,8 @@ ClientState *UARTTCPServerComponent::accept_client_(AsyncClient *client) {
   // No free slot — try to create one
   if (!slot) {
     if (clients_.size() >= max_clients_) {
-      ESP_LOGW(TAG, "Rejecting client %s — max_clients=%u reached",
-               remote_addr_(client).c_str(), (unsigned) max_clients_);
+      ESP_LOGD(TAG, "'%s' rejecting client %s: max_clients=%u reached",
+               name_.empty() ? "(no id)" : name_.c_str(), remote_addr_(client).c_str(), (unsigned) max_clients_);
       client->close();
       total_clients_rejected_++;
       return nullptr;
@@ -70,12 +72,15 @@ ClientState *UARTTCPServerComponent::accept_client_(AsyncClient *client) {
   slot->connected = true;
   slot->ring.clear();
   slot->last_rx_byte_time = millis();
+  slot->server = this;
   total_clients_accepted_++;
 
   size_t active = 0;
   for (auto *cs : clients_)
     if (cs->connected) active++;
-  ESP_LOGI(TAG, "Client connected %s (%u/%u)", remote_addr_(client).c_str(), (unsigned) active,
+  ESP_LOGI(TAG, "'%s' client connected %s (%u/%u)",
+           name_.empty() ? "(no id)" : name_.c_str(),
+           remote_addr_(client).c_str(), (unsigned) active,
            (unsigned) max_clients_);
 
   // Wire up client callbacks
@@ -91,14 +96,18 @@ ClientState *UARTTCPServerComponent::accept_client_(AsyncClient *client) {
       [](void *arg, AsyncClient *c) {
         auto *cs = static_cast<ClientState *>(arg);
         cs->connected = false;
-        ESP_LOGI(TAG, "Client disconnected %s", remote_addr_(cs->client).c_str());
+        const char *id = cs->server->name_.empty() ? "(no id)" : cs->server->name_.c_str();
+        ESP_LOGI(TAG, "'%s' client disconnected %s",
+                 id, remote_addr_(cs->client).c_str());
       },
       slot);
 
   client->onError(
       [](void *arg, AsyncClient *c, int8_t error) {
         auto *cs = static_cast<ClientState *>(arg);
-        ESP_LOGW(TAG, "Client error %s: %d", remote_addr_(cs->client).c_str(), error);
+        const char *id = cs->server->name_.empty() ? "(no id)" : cs->server->name_.c_str();
+        ESP_LOGW(TAG, "'%s' client error %s: %d",
+                 id, remote_addr_(cs->client).c_str(), error);
         cs->connected = false;
       },
       slot);
@@ -128,7 +137,9 @@ void UARTTCPServerComponent::loop() {
       if (cs->connected && cs->last_rx_byte_time > 0) {
         uint32_t idle = millis() - cs->last_rx_byte_time;
         if (idle > idle_timeout_ms_) {
-          ESP_LOGI(TAG, "Client %s idle for %ums, disconnecting", remote_addr_(cs->client).c_str(), idle);
+          ESP_LOGI(TAG, "'%s' client %s idle for %ums, disconnecting",
+                   name_.empty() ? "(no id)" : name_.c_str(),
+                   remote_addr_(cs->client).c_str(), idle);
           cs->client->close();
           cs->connected = false;
         }
@@ -144,7 +155,8 @@ void UARTTCPServerComponent::loop() {
 }
 
 void UARTTCPServerComponent::dump_config() {
-  ESP_LOGCONFIG(TAG, "UART TCP Server:");
+  const char *id = name_.empty() ? "(no id)" : name_.c_str();
+  ESP_LOGCONFIG(TAG, "UART TCP Server '%s':", id);
   ESP_LOGCONFIG(TAG, "  Port: %u", port_);
   ESP_LOGCONFIG(TAG, "  Max clients: %u", (unsigned) max_clients_);
   ESP_LOGCONFIG(TAG, "  Client mode: %s", client_mode_ == CLIENT_MODE_FANOUT ? "fanout" : "exclusive");
@@ -168,13 +180,16 @@ void UARTTCPServerComponent::write_array(const uint8_t *data, size_t len) {
       continue;
     size_t written = cs->client->write((const char *) data, len);
     if (written < len) {
-      ESP_LOGW(TAG, "Client %s: only wrote %u/%u bytes", remote_addr_(cs->client).c_str(),
+      ESP_LOGW(TAG, "'%s' client %s: only wrote %u/%u bytes",
+               name_.empty() ? "(no id)" : name_.c_str(),
+               remote_addr_(cs->client).c_str(),
                (unsigned) written, (unsigned) len);
     }
     sent_count++;
   }
   if (sent_count == 0 && len > 0) {
-    ESP_LOGD(TAG, "write_array: no connected clients, dropping %u bytes", (unsigned) len);
+    ESP_LOGD(TAG, "'%s' write_array: no connected clients, dropping %u bytes",
+             name_.empty() ? "(no id)" : name_.c_str(), (unsigned) len);
   }
 }
 

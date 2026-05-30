@@ -16,12 +16,15 @@ enum ClientMode : uint8_t {
   CLIENT_MODE_EXCLUSIVE = 1,
 };
 
+class UARTTCPServerComponent;
+
 /// Per-client state. Each accepted TCP client gets its own ring buffer.
 struct ClientState {
   AsyncClient *client{nullptr};
   uart_common::SPSCRingBuffer ring;
   volatile uint32_t last_rx_byte_time{0};
   bool connected{false};
+  UARTTCPServerComponent *server{nullptr};
 };
 
 class UARTTCPServerComponent : public uart::UARTComponent, public Component {
@@ -36,6 +39,7 @@ class UARTTCPServerComponent : public uart::UARTComponent, public Component {
   void set_rx_buffer_size(size_t size) { rx_buffer_size_ = size; }
   void set_client_mode(ClientMode mode) { client_mode_ = mode; }
   void set_idle_timeout(uint32_t ms) { idle_timeout_ms_ = ms; }
+  void set_name(const std::string &name) { name_ = name; }
 
   // UARTComponent interface
   void write_array(const uint8_t *data, size_t len) override;
@@ -63,6 +67,8 @@ class UARTTCPServerComponent : public uart::UARTComponent, public Component {
 
   uint8_t peek_buffer_{0};
   bool has_peek_{false};
+
+  std::string name_;
 
   static std::string remote_addr_(AsyncClient *client);
 

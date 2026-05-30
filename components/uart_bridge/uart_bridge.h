@@ -51,6 +51,7 @@ class UARTBridge : public uart::UARTComponent, public Component {
     members_.push_back({uart, flow});
   }
   void set_buffer_size(size_t size);
+  void set_name(const std::string &name) { name_ = name; }
 
   // --- Legacy A↔B API (deprecated) ---
   void set_uart_a(uart::UARTComponent *a);
@@ -87,6 +88,8 @@ class UARTBridge : public uart::UARTComponent, public Component {
   Direction legacy_direction_{DIRECTION_BIDIRECTIONAL};
 
   void apply_legacy_direction_();
+
+  std::string name_;
 
   // Stats
   uint32_t total_bytes_forwarded_{0};

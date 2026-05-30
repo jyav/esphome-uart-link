@@ -23,6 +23,7 @@ class UARTTCPClientComponent : public uart::UARTComponent, public Component {
   void set_rx_buffer_size(size_t size) { rx_buffer_size_ = size; }
   void set_reconnect_interval(uint32_t ms) { reconnect_interval_ms_ = ms; }
   void set_stall_timeout(uint32_t ms) { stall_timeout_ms_ = ms; }
+  void set_name(const std::string &name) { name_ = name; }
 
   // UARTComponent interface
   void write_array(const uint8_t *data, size_t len) override;
@@ -43,6 +44,8 @@ class UARTTCPClientComponent : public uart::UARTComponent, public Component {
 
   AsyncClient tcp_client_;
   uart_common::SPSCRingBuffer ring_;
+
+  std::string name_;
 
   // Peek support
   uint8_t peek_buffer_{0};

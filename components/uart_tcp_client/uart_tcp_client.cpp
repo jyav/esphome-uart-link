@@ -12,7 +12,9 @@ void UARTTCPClientComponent::setup() {
         self->connected_ = true;
         self->connecting_ = false;
         self->last_rx_byte_time_ = millis();
-        ESP_LOGI(TAG, "Connected to %s:%u", self->host_.c_str(), self->port_);
+        ESP_LOGI(TAG, "'%s' connected to %s:%u",
+                 self->name_.empty() ? "(no id)" : self->name_.c_str(),
+                 self->host_.c_str(), self->port_);
       },
       this);
 
@@ -21,7 +23,9 @@ void UARTTCPClientComponent::setup() {
         auto *self = static_cast<UARTTCPClientComponent *>(arg);
         self->connected_ = false;
         self->connecting_ = false;
-        ESP_LOGW(TAG, "Disconnected from %s:%u", self->host_.c_str(), self->port_);
+        ESP_LOGW(TAG, "'%s' disconnected from %s:%u",
+                 self->name_.empty() ? "(no id)" : self->name_.c_str(),
+                 self->host_.c_str(), self->port_);
       },
       this);
 
@@ -36,7 +40,8 @@ void UARTTCPClientComponent::setup() {
   tcp_client_.onError(
       [](void *arg, AsyncClient *client, int8_t error) {
         auto *self = static_cast<UARTTCPClientComponent *>(arg);
-        ESP_LOGE(TAG, "TCP error: %d", error);
+        ESP_LOGE(TAG, "'%s' TCP error: %d",
+                 self->name_.empty() ? "(no id)" : self->name_.c_str(), error);
         self->connected_ = false;
         self->connecting_ = false;
       },
@@ -55,7 +60,8 @@ void UARTTCPClientComponent::connect_() {
     tcp_client_.close();
     return;
   }
-  ESP_LOGI(TAG, "Connecting to %s:%u ...", host_.c_str(), port_);
+  ESP_LOGI(TAG, "'%s' connecting to %s:%u ...",
+           name_.empty() ? "(no id)" : name_.c_str(), host_.c_str(), port_);
   connecting_ = true;
   last_connect_attempt_ = millis();
 
@@ -85,7 +91,8 @@ void UARTTCPClientComponent::loop() {
   if (connected_ && last_rx_byte_time_ > 0 && stall_timeout_ms_ > 0) {
     uint32_t since_last_rx = millis() - last_rx_byte_time_;
     if (since_last_rx > stall_timeout_ms_) {
-      ESP_LOGW(TAG, "No data for %ums (stall), forcing reconnect", since_last_rx);
+      ESP_LOGW(TAG, "'%s' no data for %ums (stall), forcing reconnect",
+               name_.empty() ? "(no id)" : name_.c_str(), since_last_rx);
       disconnect_();
       ring_.clear();
       has_peek_ = false;
@@ -104,7 +111,8 @@ void UARTTCPClientComponent::loop() {
   // or the async TCP task silently drops the connect attempt.
   if (connecting_ && last_connect_attempt_ > 0 &&
       millis() - last_connect_attempt_ > reconnect_interval_ms_ * 2) {
-    ESP_LOGW(TAG, "Connect attempt stuck for %lums, forcing close",
+    ESP_LOGW(TAG, "'%s' connect attempt stuck for %lums, forcing close",
+             name_.empty() ? "(no id)" : name_.c_str(),
              (unsigned long)(millis() - last_connect_attempt_));
     tcp_client_.close();
     connecting_ = false;
@@ -112,7 +120,8 @@ void UARTTCPClientComponent::loop() {
 }
 
 void UARTTCPClientComponent::dump_config() {
-  ESP_LOGCONFIG(TAG, "UART TCP Client:");
+  const char *id = name_.empty() ? "(no id)" : name_.c_str();
+  ESP_LOGCONFIG(TAG, "UART TCP Client '%s':", id);
   ESP_LOGCONFIG(TAG, "  Host: %s:%u", host_.c_str(), port_);
   ESP_LOGCONFIG(TAG, "  RX Buffer: %u bytes (ring capacity: %u)", (unsigned) rx_buffer_size_,
                 (unsigned) ring_.capacity());
@@ -123,12 +132,14 @@ void UARTTCPClientComponent::dump_config() {
 
 void UARTTCPClientComponent::write_array(const uint8_t *data, size_t len) {
   if (!connected_) {
-    ESP_LOGW(TAG, "write_array: not connected, dropping %u bytes", (unsigned) len);
+    ESP_LOGD(TAG, "'%s' write_array: not connected, dropping %u bytes",
+             name_.empty() ? "(no id)" : name_.c_str(), (unsigned) len);
     return;
   }
   size_t written = tcp_client_.write((const char *) data, len);
   if (written < len) {
-    ESP_LOGW(TAG, "write_array: only %u/%u bytes written", (unsigned) written, (unsigned) len);
+    ESP_LOGW(TAG, "'%s' write_array: only %u/%u bytes written",
+             name_.empty() ? "(no id)" : name_.c_str(), (unsigned) written, (unsigned) len);
   }
 }
 

@@ -110,7 +110,7 @@ def _migrate_old_syntax(config):
 
 NEW_SYNTAX_SCHEMA = cv.Schema({
     cv.Optional(CONF_ID): cv.declare_id(UARTBridge),
-    cv.Required(CONF_UARTS): cv.All(cv.ensure_list, UART_ENTRY, cv.Length(min=2)),
+    cv.Required(CONF_UARTS): cv.All(cv.ensure_list(cv.Any(UART_ENTRY)), cv.Length(min=2)),
     cv.Optional(CONF_BUFFER_SIZE, default=512): cv.All(
         cv.validate_bytes, cv.Range(min=64, max=8192)
     ),
@@ -127,6 +127,10 @@ CONFIG_SCHEMA = cv.All(
 async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     cg.add(var.set_buffer_size(config[CONF_BUFFER_SIZE]))
+
+    # Set name for logging (use the id if available)
+    if CONF_ID in config and config[CONF_ID] is not None:
+        cg.add(var.set_name(str(config[CONF_ID])))
 
     if "__legacy_uart_a" in config:
         # Old uart_a/uart_b API

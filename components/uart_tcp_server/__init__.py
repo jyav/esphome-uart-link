@@ -42,4 +42,5 @@ async def to_code(config):
     cg.add(var.set_rx_buffer_size(config[CONF_RX_BUFFER_SIZE]))
     cg.add(var.set_client_mode(config[CONF_CLIENT_MODE]))
     cg.add(var.set_idle_timeout(config[CONF_IDLE_TIMEOUT]))
+    cg.add(var.set_name(str(config[CONF_ID])))
     await cg.register_component(var, config)

@@ -37,4 +37,5 @@ async def to_code(config):
     cg.add(var.set_rx_buffer_size(config[CONF_RX_BUFFER_SIZE]))
     cg.add(var.set_reconnect_interval(config[CONF_RECONNECT_INTERVAL]))
     cg.add(var.set_stall_timeout(config[CONF_STALL_TIMEOUT]))
+    cg.add(var.set_name(str(config[CONF_ID])))
     await cg.register_component(var, config)

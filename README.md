@@ -57,7 +57,7 @@ Includes stall detection: if no bytes arrive for `stall_timeout`, it forces a re
 
 ### `uart_tcp_server`
 
-Listens on a TCP port and **is** a `UARTComponent`. It doesn't wrap a hardware UART; it *is* the UART, backed by TCP sockets. From the ESPHome side, anything reading from it sees bytes written by TCP clients; anything written to it gets sent to connected clients. Each client gets its own ring buffer; bytes from all clients are merged into a single read stream.
+Listens on a TCP port and **is** a `UARTComponent`. A `UARTComponent` backed by TCP sockets. Anything reading from it sees bytes written by TCP clients; anything written to it gets sent to connected clients. Each client gets its own ring buffer; bytes from all clients are merged into a single read stream.
 
 ```yaml
 uart_tcp_server:
@@ -308,7 +308,7 @@ a custom `sam_ascii` component uses `uart_tcp_server` directly as its UART to ex
 ### Multi-tap: debug viewer alongside a UART consumer
 
 ESPHome's UART is poll-based. Once bytes are read, they're gone.
-You can't have two components reading from the same hardware UART.
+ESPHome's UART API consumes bytes on read. Only one component can read from a given hardware UART.
 `uart_bridge` solves this: it reads from the hardware UART, buffers the bytes internally,
 and fans them out to any number of additional UARTs. A UART consumer reads from the bridge itself.
 
@@ -429,16 +429,16 @@ hardware flow control signals (RTS/CTS, DTR/DSR),
 or baud rate negotiation over the network.
 The hardware UART baud rate is set once in YAML and stays fixed.
 
-This means:
-- **Works well:**
-  protocols that use a fixed baud rate and don't depend on modem control signals
-  (Modbus RTU, most smart meters, HVAC serial, BMS, RS485 buses, raw data streaming).
-- **Doesn't work:**
-  scenarios that require changing baud rates mid-session
-  (e.g., the 1200-baud reset trick some bootloaders use)
-  or toggling DTR/RTS from the remote end
-  (e.g., `esphome upload` for some platforms).
-  For those, use a USB connection or a full RFC 2217 bridge like ser2net.
+**Works well:**
+protocols that use a fixed baud rate and don't depend on modem control signals
+(Modbus RTU, most smart meters, HVAC serial, BMS, RS485 buses, raw data streaming).
+
+**Doesn't work:**
+scenarios that require changing baud rates mid-session
+(e.g., the 1200-baud reset trick some bootloaders use)
+or toggling DTR/RTS from the remote end
+(e.g., `esphome upload` for some platforms).
+For those, use a USB connection or a full RFC 2217 bridge like ser2net.
 
 ### Poll-based limitation
 
