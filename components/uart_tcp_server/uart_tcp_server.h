@@ -28,6 +28,7 @@ struct ClientState {
   uint32_t tx_defers{0};
   uint32_t tx_overflow_bytes{0};
   uint32_t last_overflow_warn{0};
+  uint32_t rx_drops{0};
   uart_common::SPSCRingBuffer ring;
   volatile uint32_t last_rx_byte_time{0};
   bool connected{false};

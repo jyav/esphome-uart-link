@@ -50,7 +50,8 @@ class UARTTCPClientComponent : public uart::UARTComponent, public Component {
   size_t tx_stage_off_{0};
   uint32_t tx_defers_{0};
   uint32_t tx_overflow_bytes_{0};
-  uint32_t last_overflow_warn_{0};                // write()==0 events (lwIP segment queue full); retried, not lost
+  uint32_t last_overflow_warn_{0};
+  uint32_t rx_drops_{0};                // write()==0 events (lwIP segment queue full); retried, not lost
   uart_common::SPSCRingBuffer ring_;
 
   std::string name_;

@@ -91,7 +91,7 @@ ClientState *UARTTCPServerComponent::accept_client_(AsyncClient *client) {
   client->onData(
       [](void *arg, AsyncClient *c, void *data, size_t len) {
         auto *cs = static_cast<ClientState *>(arg);
-        cs->ring.write(static_cast<uint8_t *>(data), len);
+        cs->rx_drops += cs->ring.write(static_cast<uint8_t *>(data), len);
         cs->last_rx_byte_time = millis();
       },
       slot);

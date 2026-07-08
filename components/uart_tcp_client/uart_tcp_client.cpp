@@ -5,7 +5,7 @@ namespace esphome::uart_tcp_client {
 
 void UARTTCPClientComponent::setup() {
   ring_.init(rx_buffer_size_);
-  tx_ring_.init(4096);
+  tx_ring_.init(4096);  // must exceed worst-case burst it feeds downstream
 
   tcp_client_.onConnect(
       [](void *arg, AsyncClient *client) {
@@ -34,7 +34,7 @@ void UARTTCPClientComponent::setup() {
   tcp_client_.onData(
       [](void *arg, AsyncClient *client, void *data, size_t len) {
         auto *self = static_cast<UARTTCPClientComponent *>(arg);
-        self->ring_.write(static_cast<uint8_t *>(data), len);
+        self->rx_drops_ += self->ring_.write(static_cast<uint8_t *>(data), len);
         self->last_rx_byte_time_ = millis();
       },
       this);
@@ -132,6 +132,8 @@ void UARTTCPClientComponent::dump_config() {
                 (unsigned) ring_.capacity());
   ESP_LOGCONFIG(TAG, "  Connected: %s", connected_ ? "YES" : "NO");
   ESP_LOGCONFIG(TAG, "  TX defers (segment-queue full, retried): %u", (unsigned) tx_defers_);
+  ESP_LOGCONFIG(TAG, "  TX ring overflow bytes lost: %u", (unsigned) tx_overflow_bytes_);
+  ESP_LOGCONFIG(TAG, "  RX ring overflow bytes lost: %u", (unsigned) rx_drops_);
 }
 
 // ---- UARTComponent overrides ----

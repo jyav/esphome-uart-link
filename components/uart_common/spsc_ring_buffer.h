@@ -32,8 +32,9 @@ struct SPSCRingBuffer {
   void clear() { tail = head; }
 
   /// Write bytes into ring buffer (producer side).
-  /// Drops oldest bytes on overflow.
-  void write(const uint8_t *data, size_t len) {
+  /// Drops oldest bytes on overflow. Returns the number of bytes dropped.
+  size_t write(const uint8_t *data, size_t len) {
+    size_t dropped = 0;
     for (size_t i = 0; i < len; i++) {
       size_t next_head = (head + 1) & mask;
       if (next_head != tail) {
@@ -44,8 +45,10 @@ struct SPSCRingBuffer {
         tail = (tail + 1) & mask;
         buf[head] = data[i];
         head = next_head;
+        dropped++;
       }
     }
+    return dropped;
   }
 
   /// Read up to len bytes. Returns count actually read.
