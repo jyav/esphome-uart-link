@@ -11,6 +11,7 @@ void UARTTCPClientComponent::setup() {
         auto *self = static_cast<UARTTCPClientComponent *>(arg);
         self->connected_ = true;
         self->connecting_ = false;
+        client->setNoDelay(true);  // disable Nagle: latency matters more than segment count
         self->last_rx_byte_time_ = millis();
         ESP_LOGI(TAG, "'%s' connected to %s:%u",
                  self->name_.empty() ? "(no id)" : self->name_.c_str(),
