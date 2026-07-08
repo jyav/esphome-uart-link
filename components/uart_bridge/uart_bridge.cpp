@@ -64,10 +64,13 @@ void UARTBridge::loop() {
     if (!src.reader() || !src.uart)
       continue;
 
-    while (src.uart->available()) {
-      size_t n = std::min((size_t) src.uart->available(), buffer_.size());
+    size_t budget = 256;  // per-member per-loop cap: keeps one busy member from
+                          // monopolizing the loop and starving WiFi/TCP servicing
+    while (src.uart->available() && budget > 0) {
+      size_t n = std::min({(size_t) src.uart->available(), buffer_.size(), budget});
       if (!src.uart->read_array(buffer_.data(), n))
         break;
+      budget -= n;
 
       // Write to internal ring for consumer reads
       rx_ring_.write(buffer_.data(), n);
@@ -76,8 +79,8 @@ void UARTBridge::loop() {
       for (auto &dst : members_) {
         if (&dst == &src || !dst.writer() || !dst.uart)
           continue;
-        dst.uart->write_array(buffer_.data(), n);
-        dst.uart->flush();
+        dst.uart->write_array(buffer_.data(), n);  // no flush(): blocking-drains the
+        // hardware UART on ESP8266, starving lwIP under sustained load
       }
 
       total_bytes_forwarded_ += n;
@@ -100,7 +103,6 @@ void UARTBridge::write_array(const uint8_t *data, size_t len) {
   for (auto &member : members_) {
     if (member.writer() && member.uart) {
       member.uart->write_array(data, len);
-      member.uart->flush();
       sent_count++;
     }
   }

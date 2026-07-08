@@ -21,6 +21,7 @@ class UARTTCPServerComponent;
 /// Per-client state. Each accepted TCP client gets its own ring buffer.
 struct ClientState {
   AsyncClient *client{nullptr};
+  uart_common::SPSCRingBuffer tx_ring;  // buffered TX per client: retry instead of drop
   uart_common::SPSCRingBuffer ring;
   volatile uint32_t last_rx_byte_time{0};
   bool connected{false};
@@ -51,6 +52,7 @@ class UARTTCPServerComponent : public uart::UARTComponent, public Component {
  protected:
   void check_logger_conflict() override {}
   ClientState *accept_client_(AsyncClient *client);
+  void drain_tx_();
   void merge_rx_();
 
   uint16_t port_{0};

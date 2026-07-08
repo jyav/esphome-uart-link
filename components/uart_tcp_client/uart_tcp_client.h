@@ -42,7 +42,9 @@ class UARTTCPClientComponent : public uart::UARTComponent, public Component {
   size_t rx_buffer_size_{4096};
   uint32_t reconnect_interval_ms_{5000};
 
+  void drain_tx_();
   AsyncClient tcp_client_;
+  uart_common::SPSCRingBuffer tx_ring_;  // buffered TX: retry on TCP backpressure instead of dropping
   uart_common::SPSCRingBuffer ring_;
 
   std::string name_;

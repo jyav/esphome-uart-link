@@ -66,10 +66,12 @@ ClientState *UARTTCPServerComponent::accept_client_(AsyncClient *client) {
     }
     slot = new ClientState();
     slot->ring.init(rx_buffer_size_);
+    slot->tx_ring.init(4096);  // buffered TX: retry instead of drop
     clients_.push_back(slot);
   }
 
   slot->client = client;
+  slot->tx_ring.clear();
   slot->connected = true;
   slot->ring.clear();
   slot->last_rx_byte_time = millis();
@@ -130,6 +132,7 @@ void UARTTCPServerComponent::merge_rx_() {
 }
 
 void UARTTCPServerComponent::loop() {
+  drain_tx_();
   merge_rx_();
 
   // Idle timeout
@@ -179,18 +182,41 @@ void UARTTCPServerComponent::write_array(const uint8_t *data, size_t len) {
   for (auto *cs : clients_) {
     if (!cs->connected)
       continue;
-    size_t written = cs->client->write((const char *) data, len);
-    if (written < len) {
-      ESP_LOGW(TAG, "'%s' client %s: only wrote %u/%u bytes",
+    size_t free_space = cs->tx_ring.capacity() - cs->tx_ring.available() - 1;
+    if (len > free_space) {
+      ESP_LOGW(TAG, "'%s' client %s: TX ring full, overwriting %u bytes",
                name_.empty() ? "(no id)" : name_.c_str(),
-               remote_addr_(cs->client).c_str(),
-               (unsigned) written, (unsigned) len);
+               remote_addr_(cs->client).c_str(), (unsigned) (len - free_space));
     }
+    cs->tx_ring.write(data, len);
     sent_count++;
   }
+  drain_tx_();
   if (sent_count == 0 && len > 0) {
     ESP_LOGD(TAG, "'%s' write_array: no connected clients, dropping %u bytes",
              name_.empty() ? "(no id)" : name_.c_str(), (unsigned) len);
+  }
+}
+
+void UARTTCPServerComponent::drain_tx_() {
+  uint8_t buf[256];
+  for (auto *cs : clients_) {
+    if (!cs->connected)
+      continue;
+    while (cs->tx_ring.available() > 0) {
+      size_t space = cs->client->space();
+      if (space == 0)
+        break;  // TCP backpressure on this client: retry next loop()
+      size_t n = std::min({cs->tx_ring.available(), space, sizeof(buf)});
+      n = cs->tx_ring.read(buf, n);
+      size_t written = cs->client->write((const char *) buf, n);
+      if (written < n) {
+        ESP_LOGW(TAG, "'%s' client %s: drain_tx took %u/%u despite space",
+                 name_.empty() ? "(no id)" : name_.c_str(),
+                 remote_addr_(cs->client).c_str(), (unsigned) written, (unsigned) n);
+        break;
+      }
+    }
   }
 }
 

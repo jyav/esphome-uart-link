@@ -5,6 +5,7 @@ namespace esphome::uart_tcp_client {
 
 void UARTTCPClientComponent::setup() {
   ring_.init(rx_buffer_size_);
+  tx_ring_.init(4096);
 
   tcp_client_.onConnect(
       [](void *arg, AsyncClient *client) {
@@ -81,9 +82,11 @@ void UARTTCPClientComponent::disconnect_() {
   tcp_client_.close();
   connected_ = false;
   connecting_ = false;
+  tx_ring_.clear();
 }
 
 void UARTTCPClientComponent::loop() {
+  drain_tx_();
 #if !defined(USE_ESP32) && !defined(USE_ESP8266) && !defined(USE_ESP2040) && !defined(USE_LIBRETINY)
   tcp_client_.loop();
 #endif
@@ -137,10 +140,35 @@ void UARTTCPClientComponent::write_array(const uint8_t *data, size_t len) {
              name_.empty() ? "(no id)" : name_.c_str(), (unsigned) len);
     return;
   }
-  size_t written = tcp_client_.write((const char *) data, len);
-  if (written < len) {
-    ESP_LOGW(TAG, "'%s' write_array: only %u/%u bytes written",
-             name_.empty() ? "(no id)" : name_.c_str(), (unsigned) written, (unsigned) len);
+  // Buffer into the TX ring; loop() drains it into the socket as TCP window/sndbuf
+  // space allows. Only a full ring (network stalled for >~350ms of line-rate data)
+  // loses bytes, and the ring drops-oldest in that case.
+  size_t free_space = tx_ring_.capacity() - tx_ring_.available() - 1;
+  if (len > free_space) {
+    ESP_LOGW(TAG, "'%s' write_array: TX ring full, overwriting %u bytes",
+             name_.empty() ? "(no id)" : name_.c_str(), (unsigned) (len - free_space));
+  }
+  tx_ring_.write(data, len);
+  drain_tx_();
+}
+
+void UARTTCPClientComponent::drain_tx_() {
+  if (!connected_)
+    return;
+  uint8_t buf[256];
+  while (tx_ring_.available() > 0) {
+    size_t space = tcp_client_.space();
+    if (space == 0)
+      break;  // TCP backpressure: retry next loop() once ACKs free the send buffer
+    size_t n = std::min({tx_ring_.available(), space, sizeof(buf)});
+    n = tx_ring_.read(buf, n);
+    size_t written = tcp_client_.write((const char *) buf, n);
+    if (written < n) {
+      // sized to space() so this is unexpected; report it rather than lose silently
+      ESP_LOGW(TAG, "'%s' drain_tx: socket took %u/%u despite space",
+               name_.empty() ? "(no id)" : name_.c_str(), (unsigned) written, (unsigned) n);
+      break;
+    }
   }
 }
 
