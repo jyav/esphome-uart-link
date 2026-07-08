@@ -72,6 +72,7 @@ ClientState *UARTTCPServerComponent::accept_client_(AsyncClient *client) {
 
   slot->client = client;
   slot->tx_ring.clear();
+  slot->tx_stage_len = slot->tx_stage_off = 0;
   slot->connected = true;
   slot->ring.clear();
   slot->last_rx_byte_time = millis();
@@ -199,23 +200,25 @@ void UARTTCPServerComponent::write_array(const uint8_t *data, size_t len) {
 }
 
 void UARTTCPServerComponent::drain_tx_() {
-  uint8_t buf[256];
   for (auto *cs : clients_) {
     if (!cs->connected)
       continue;
-    while (cs->tx_ring.available() > 0) {
-      size_t space = cs->client->space();
-      if (space == 0)
-        break;  // TCP backpressure on this client: retry next loop()
-      size_t n = std::min({cs->tx_ring.available(), space, sizeof(buf)});
-      n = cs->tx_ring.read(buf, n);
-      size_t written = cs->client->write((const char *) buf, n);
-      if (written < n) {
-        ESP_LOGW(TAG, "'%s' client %s: drain_tx took %u/%u despite space",
-                 name_.empty() ? "(no id)" : name_.c_str(),
-                 remote_addr_(cs->client).c_str(), (unsigned) written, (unsigned) n);
+    while (true) {
+      if (cs->tx_stage_off >= cs->tx_stage_len) {
+        cs->tx_stage_len = cs->tx_ring.read(cs->tx_stage, sizeof(cs->tx_stage));
+        cs->tx_stage_off = 0;
+        if (cs->tx_stage_len == 0)
+          break;
+      }
+      if (cs->client->space() == 0)
+        break;
+      size_t n = cs->tx_stage_len - cs->tx_stage_off;
+      size_t written = cs->client->write((const char *) cs->tx_stage + cs->tx_stage_off, n);
+      if (written == 0) {
+        cs->tx_defers++;  // lwIP segment queue full: retry next loop(), nothing lost
         break;
       }
+      cs->tx_stage_off += written;
     }
   }
 }

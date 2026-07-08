@@ -45,6 +45,10 @@ class UARTTCPClientComponent : public uart::UARTComponent, public Component {
   void drain_tx_();
   AsyncClient tcp_client_;
   uart_common::SPSCRingBuffer tx_ring_;  // buffered TX: retry on TCP backpressure instead of dropping
+  uint8_t tx_stage_[256];                // in-flight chunk; only consumed as the socket accepts it
+  size_t tx_stage_len_{0};
+  size_t tx_stage_off_{0};
+  uint32_t tx_defers_{0};                // write()==0 events (lwIP segment queue full); retried, not lost
   uart_common::SPSCRingBuffer ring_;
 
   std::string name_;

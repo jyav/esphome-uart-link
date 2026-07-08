@@ -83,6 +83,7 @@ void UARTTCPClientComponent::disconnect_() {
   connected_ = false;
   connecting_ = false;
   tx_ring_.clear();
+  tx_stage_len_ = tx_stage_off_ = 0;
 }
 
 void UARTTCPClientComponent::loop() {
@@ -130,6 +131,7 @@ void UARTTCPClientComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  RX Buffer: %u bytes (ring capacity: %u)", (unsigned) rx_buffer_size_,
                 (unsigned) ring_.capacity());
   ESP_LOGCONFIG(TAG, "  Connected: %s", connected_ ? "YES" : "NO");
+  ESP_LOGCONFIG(TAG, "  TX defers (segment-queue full, retried): %u", (unsigned) tx_defers_);
 }
 
 // ---- UARTComponent overrides ----
@@ -155,20 +157,27 @@ void UARTTCPClientComponent::write_array(const uint8_t *data, size_t len) {
 void UARTTCPClientComponent::drain_tx_() {
   if (!connected_)
     return;
-  uint8_t buf[256];
-  while (tx_ring_.available() > 0) {
-    size_t space = tcp_client_.space();
-    if (space == 0)
-      break;  // TCP backpressure: retry next loop() once ACKs free the send buffer
-    size_t n = std::min({tx_ring_.available(), space, sizeof(buf)});
-    n = tx_ring_.read(buf, n);
-    size_t written = tcp_client_.write((const char *) buf, n);
-    if (written < n) {
-      // sized to space() so this is unexpected; report it rather than lose silently
-      ESP_LOGW(TAG, "'%s' drain_tx: socket took %u/%u despite space",
-               name_.empty() ? "(no id)" : name_.c_str(), (unsigned) written, (unsigned) n);
-      break;
+  while (true) {
+    if (tx_stage_off_ >= tx_stage_len_) {
+      // Stage fully sent: refill from the ring
+      tx_stage_len_ = tx_ring_.read(tx_stage_, sizeof(tx_stage_));
+      tx_stage_off_ = 0;
+      if (tx_stage_len_ == 0)
+        return;  // nothing pending
     }
+    if (tcp_client_.space() == 0)
+      return;  // byte-level backpressure: retry next loop()
+    size_t n = tx_stage_len_ - tx_stage_off_;
+    size_t written = tcp_client_.write((const char *) tx_stage_ + tx_stage_off_, n);
+    if (written == 0) {
+      // lwIP ERR_MEM: segment queue full even though byte space remains.
+      // Nothing is lost - the stage keeps the bytes; retry next loop() after ACKs
+      // free segment slots. Under load the ring backs up, so subsequent drains
+      // send full 256B chunks, which also relieves the segment queue.
+      tx_defers_++;
+      return;
+    }
+    tx_stage_off_ += written;
   }
 }
 

@@ -22,6 +22,10 @@ class UARTTCPServerComponent;
 struct ClientState {
   AsyncClient *client{nullptr};
   uart_common::SPSCRingBuffer tx_ring;  // buffered TX per client: retry instead of drop
+  uint8_t tx_stage[256];                // in-flight chunk; only consumed as the socket accepts it
+  size_t tx_stage_len{0};
+  size_t tx_stage_off{0};
+  uint32_t tx_defers{0};
   uart_common::SPSCRingBuffer ring;
   volatile uint32_t last_rx_byte_time{0};
   bool connected{false};
