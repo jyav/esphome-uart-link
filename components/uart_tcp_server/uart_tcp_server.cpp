@@ -33,6 +33,7 @@ void UARTTCPServerComponent::setup() {
 }
 
 ClientState *UARTTCPServerComponent::accept_client_(AsyncClient *client) {
+  client->setNoDelay(true);  // disable Nagle: latency matters more than segment count
   // Exclusive mode: disconnect existing clients
   if (client_mode_ == CLIENT_MODE_EXCLUSIVE) {
     for (auto *cs : clients_) {
