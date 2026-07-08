@@ -147,8 +147,13 @@ void UARTTCPClientComponent::write_array(const uint8_t *data, size_t len) {
   // loses bytes, and the ring drops-oldest in that case.
   size_t free_space = tx_ring_.capacity() - tx_ring_.available() - 1;
   if (len > free_space) {
-    ESP_LOGW(TAG, "'%s' write_array: TX ring full, overwriting %u bytes",
-             name_.empty() ? "(no id)" : name_.c_str(), (unsigned) (len - free_space));
+    tx_overflow_bytes_ += (len - free_space);
+    const uint32_t now = millis();
+    if (now - last_overflow_warn_ > 1000) {  // rate-limited: log spam eats the same
+      last_overflow_warn_ = now;             // TCP segment pool it is reporting on
+      ESP_LOGW(TAG, "'%s' TX ring overflow: %u bytes lost total",
+               name_.empty() ? "(no id)" : name_.c_str(), (unsigned) tx_overflow_bytes_);
+    }
   }
   tx_ring_.write(data, len);
   drain_tx_();

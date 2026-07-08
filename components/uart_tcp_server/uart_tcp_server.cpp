@@ -185,9 +185,14 @@ void UARTTCPServerComponent::write_array(const uint8_t *data, size_t len) {
       continue;
     size_t free_space = cs->tx_ring.capacity() - cs->tx_ring.available() - 1;
     if (len > free_space) {
-      ESP_LOGW(TAG, "'%s' client %s: TX ring full, overwriting %u bytes",
-               name_.empty() ? "(no id)" : name_.c_str(),
-               remote_addr_(cs->client).c_str(), (unsigned) (len - free_space));
+      cs->tx_overflow_bytes += (len - free_space);
+      const uint32_t now = millis();
+      if (now - cs->last_overflow_warn > 1000) {
+        cs->last_overflow_warn = now;
+        ESP_LOGW(TAG, "'%s' client %s: TX ring overflow, %u bytes lost total",
+                 name_.empty() ? "(no id)" : name_.c_str(),
+                 remote_addr_(cs->client).c_str(), (unsigned) cs->tx_overflow_bytes);
+      }
     }
     cs->tx_ring.write(data, len);
     sent_count++;
